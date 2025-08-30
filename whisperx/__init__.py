@@ -29,3 +29,8 @@ def load_audio(*args, **kwargs):
 def assign_word_speakers(*args, **kwargs):
     diarize = _lazy_import("diarize")
     return diarize.assign_word_speakers(*args, **kwargs)
+
+
+def transcribe_audio(*args, **kwargs):
+    transcribe = _lazy_import("transcribe")
+    return transcribe.transcribe_audio(*args, **kwargs)

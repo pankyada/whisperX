@@ -2,8 +2,6 @@ import argparse
 import importlib.metadata
 import platform
 
-import torch
-
 from whisperx.utils import (LANGUAGES, TO_LANGUAGE_CODE, optional_float,
                             optional_int, str2bool)
 
@@ -11,11 +9,11 @@ from whisperx.utils import (LANGUAGES, TO_LANGUAGE_CODE, optional_float,
 def cli():
     # fmt: off
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("audio", nargs="+", type=str, help="audio file(s) to transcribe")
+    parser.add_argument("audio", nargs="*", type=str, help="audio file(s) to transcribe")
     parser.add_argument("--model", default="small", help="name of the Whisper model to use")
     parser.add_argument("--model_cache_only", type=str2bool, default=False, help="If True, will not attempt to download models, instead using cached models from --model_dir")
     parser.add_argument("--model_dir", type=str, default=None, help="the path to save model files; uses ~/.cache/whisper by default")
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu", help="device to use for PyTorch inference")
+    parser.add_argument("--device", default=None, help="device to use for PyTorch inference (auto-detect if None)")
     parser.add_argument("--device_index", default=0, type=int, help="device index to use for FasterWhisper inference")
     parser.add_argument("--batch_size", default=8, type=int, help="the preferred batch size for inference")
     parser.add_argument("--compute_type", default="float16", type=str, choices=["float16", "float32", "int8"], help="compute type for computation")
@@ -74,15 +72,42 @@ def cli():
     parser.add_argument("--hf_token", type=str, default=None, help="Hugging Face Access Token to access PyAnnote gated models")
 
     parser.add_argument("--print_progress", type=str2bool, default = False, help = "if True, progress will be printed in transcribe() and align() methods.")
+    
+    # Server option
+    parser.add_argument("--serve", action="store_true", help="Start FastAPI server instead of transcribing files")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to (only used with --serve)")
+    parser.add_argument("--port", type=int, default=8000, help="Port to bind the server to (only used with --serve)")
+    
     parser.add_argument("--version", "-V", action="version", version=f"%(prog)s {importlib.metadata.version('whisperx')}",help="Show whisperx version information and exit")
     parser.add_argument("--python-version", "-P", action="version", version=f"Python {platform.python_version()} ({platform.python_implementation()})",help="Show python version information and exit")
     # fmt: on
 
     args = parser.parse_args().__dict__
-
-    from whisperx.transcribe import transcribe_task
-
-    transcribe_task(args, parser)
+    
+    # Handle server mode
+    if args.pop("serve"):
+        host = args.pop("host")
+        port = args.pop("port")
+        # Start FastAPI server
+        import uvicorn
+        from whisperx.api import app
+        print(f"Starting WhisperX API server on {host}:{port}")
+        uvicorn.run(app, host=host, port=port)
+    else:
+        # Import torch only when needed for transcription
+        import torch
+        
+        # Set default device if not specified
+        if args["device"] is None:
+            args["device"] = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Ensure audio files are provided for transcription
+        if not args.get("audio"):
+            parser.error("audio files are required unless using --serve")
+        
+        # Normal transcription mode
+        from whisperx.transcribe import transcribe_task
+        transcribe_task(args, parser)
 
 
 if __name__ == "__main__":
